@@ -22,48 +22,45 @@ object Server {
     }
 
     private fun handleClient(socket: Socket) {
-        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-        val writer = PrintWriter(socket.getOutputStream(), true)
+        socket.use {
+            val reader = BufferedReader(InputStreamReader(it.getInputStream()))
+            val writer = PrintWriter(it.getOutputStream(), true)
 
-        val request = reader.readLine().split(" ")
-        if (request[0] == "REGISTER") {
-            val username = request[1]
-            val password = request[2]
+            val request = reader.readLine().split(" ")
+            if (request[0] == "REGISTER") {
+                val username = request[1]
+                val password = request[2]
 
-            // Добавление нового пользователя в базу данных
-            val statement = connection.createStatement()
-            val updateCount = statement.executeUpdate(
-                "INSERT INTO Users (username, password) VALUES ('$username', '$password')"
-            )
+                // Добавление нового пользователя в базу данных
+                val statement = connection.createStatement()
+                val updateCount = statement.executeUpdate(
+                    "INSERT INTO Users (username, password) VALUES ('$username', '$password')"
+                )
 
-            if (updateCount > 0) {
-                // Если регистрация прошла успешно, отправьте ответ обратно клиенту
-                writer.println("Успешная регистрация")
+                if (updateCount > 0) {
+                    writer.println("Успешная регистрация")
+                } else {
+                    writer.println("Ошибка регистрации")
+                }
             } else {
-                // Если регистрация не удалась, отправьте сообщение об ошибке
-                writer.println("Ошибка регистрации")
-            }
-        } else {
-            val username = request[0]
-            val password = request[1]
+                val username = request[0]
+                val password = request[1]
 
-            // Проверка логина и пароля, используя базу данных
-            val statement = connection.createStatement()
-            val resultSet = statement.executeQuery(
-                "SELECT * FROM Users WHERE username = '$username' AND password = '$password'"
-            )
+                // Проверка логина и пароля, используя базу данных
+                val statement = connection.createStatement()
+                val resultSet = statement.executeQuery(
+                    "SELECT * FROM Users WHERE username = '$username' AND password = '$password'"
+                )
 
-            if (resultSet.next()) {
-                // Если пользователь найден, отправьте ответ обратно клиенту
-                writer.println("Успешный вход")
-                sendAccounts(username, writer)
-            } else {
-                // Если пользователь не найден, отправьте сообщение об ошибке
-                writer.println("Неверный логин или пароль")
+                if (resultSet.next()) {
+                    writer.println("Успешный вход")
+                    sendAccounts(username, writer)
+                } else {
+                    writer.println("Неверный логин или пароль")
+                }
             }
         }
     }
-
 
     private fun sendAccounts(username: String, writer: PrintWriter) {
         val statement = connection.createStatement()
@@ -80,14 +77,10 @@ object Server {
             writer.println("$accountNumber $balance $accountType $maturityDate")
         }
 
-        // Отправить строку "END_OF_DATA" после всех данных аккаунта
         writer.println("END_OF_DATA")
     }
-
-
-
 }
-fun main(){
-    Server.start()
 
+fun main() {
+    Server.start()
 }
