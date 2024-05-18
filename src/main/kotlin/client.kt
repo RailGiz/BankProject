@@ -5,79 +5,75 @@ import java.net.Socket
 import java.math.BigDecimal
 import java.time.LocalDate
 
+
 object Client {
-    private fun createSocket(): Socket {
-        return Socket("localhost", 8080)
+    private lateinit var socket: Socket
+    private lateinit var reader: BufferedReader
+    private lateinit var writer: PrintWriter
+
+    init {
+        connect()
+    }
+
+    private fun connect() {
+        try {
+            socket = Socket("localhost", 8080)
+            reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            writer = PrintWriter(socket.getOutputStream(), true)
+        } catch (e: Exception) {
+            println("Ошибка при подключении к серверу: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     fun login(username: String, password: String): String {
         return try {
-            createSocket().use { socket ->
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                val writer = PrintWriter(socket.getOutputStream(), true)
-
-                writer.println("$username $password")
-                val response = reader.readLine()
-                println("Ответ сервера на запрос входа: $response")
-                response
-            }
+            writer.println("$username $password")
+            val response = reader.readLine()
+            println("Ответ сервера на запрос входа: $response")
+            response
         } catch (e: Exception) {
             println("Произошла ошибка при входе: ${e.message}")
+            e.printStackTrace()
             "Ошибка"
         }
     }
 
     fun getAccounts(username: String): List<Account> {
         return try {
-            createSocket().use { socket ->
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                val writer = PrintWriter(socket.getOutputStream(), true)
-
-                writer.println(username)
-                val accounts = mutableListOf<Account>()
-                var line = reader.readLine()
-                while (line != null) {
-                    if (line == "END_OF_DATA") {
-                        break
-                    }
-                    println("Получена строка данных аккаунта: $line")
-                    val accountData = line.split(" ")
-                    if (accountData.size < 3) {
-                        println("Неправильный формат данных аккаунта: $line")
-                    } else {
-                        val account = Account(
-                            accountNumber = accountData[0],
-                            balance = BigDecimal(accountData[1]),
-                            accountType = accountData[2],
-                            maturityDate = if (accountData.size > 3 && accountData[3] != "null") LocalDate.parse(accountData[3]) else null
-                        )
-                        accounts.add(account)
-                        println("Добавлен аккаунт: $account")
-                    }
-                    line = reader.readLine()
+            writer.println(username)
+            val accounts = mutableListOf<Account>()
+            var line = reader.readLine()
+            while (line != null && line != "END_OF_DATA") {
+                val accountData = line.split(" ")
+                if (accountData.size >= 3) {
+                    val account = Account(
+                        accountNumber = accountData[0],
+                        balance = BigDecimal(accountData[1]),
+                        accountType = accountData[2],
+                        maturityDate = if (accountData.size > 3 && accountData[3] != "null") LocalDate.parse(accountData[3]) else null
+                    )
+                    accounts.add(account)
                 }
-                println("Всего аккаунтов получено: ${accounts.size}")
-                accounts
+                line = reader.readLine()
             }
+            accounts
         } catch (e: Exception) {
             println("Произошла ошибка при получении аккаунтов: ${e.message}")
+            e.printStackTrace()
             listOf()
         }
     }
 
     fun register(username: String, password: String): String {
         return try {
-            createSocket().use { socket ->
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                val writer = PrintWriter(socket.getOutputStream(), true)
-
-                writer.println("REGISTER $username $password")
-                val response = reader.readLine()
-                println("Ответ сервера на запрос регистрации: $response")
-                response
-            }
+            writer.println("REGISTER $username $password")
+            val response = reader.readLine()
+            println("Ответ сервера на запрос регистрации: $response")
+            response
         } catch (e: Exception) {
             println("Произошла ошибка при регистрации: ${e.message}")
+            e.printStackTrace()
             "Ошибка"
         }
     }
@@ -85,10 +81,10 @@ object Client {
 
 fun main() {
     // Вход в систему
-    val loginResponse = Client.login("testreg", "testreg")
+    val loginResponse = Client.login("user1", "password1")
     if (loginResponse != "Ошибка") {
         // Получение аккаунтов
-        val accounts = Client.getAccounts("testreg")
+        val accounts = Client.getAccounts("user1")
         if (accounts.isEmpty()) {
             println("Не получено ни одного аккаунта")
         } else {
