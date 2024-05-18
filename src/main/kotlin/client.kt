@@ -28,7 +28,7 @@ object Client {
 
     fun login(username: String, password: String): String {
         return try {
-            writer.println("$username $password")
+            writer.println("LOGIN $username $password")
             val response = reader.readLine()
             println("Ответ сервера на запрос входа: $response")
             response
@@ -41,7 +41,7 @@ object Client {
 
     fun getAccounts(username: String): List<Account> {
         return try {
-            writer.println(username)
+            writer.println("ACCOUNTS $username")
             val accounts = mutableListOf<Account>()
             var line = reader.readLine()
             while (line != null && line != "END_OF_DATA") {
@@ -73,6 +73,19 @@ object Client {
             response
         } catch (e: Exception) {
             println("Произошла ошибка при регистрации: ${e.message}")
+            e.printStackTrace()
+            "Ошибка"
+        }
+    }
+
+    fun transferMoney(fromAccount: String, toAccount: String, amount: BigDecimal): String {
+        return try {
+            writer.println("TRANSFER $fromAccount $toAccount $amount")
+            val response = reader.readLine()
+            println("Ответ сервера на запрос перевода: $response")
+            response
+        } catch (e: Exception) {
+            println("Произошла ошибка при переводе денег: ${e.message}")
             e.printStackTrace()
             "Ошибка"
         }

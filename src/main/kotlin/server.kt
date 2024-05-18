@@ -1,10 +1,10 @@
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.PrintWriter
+import java.io.*
 import java.net.ServerSocket
 import java.net.Socket
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.PreparedStatement
+import java.math.BigDecimal
 import kotlin.concurrent.thread
 
 object Server {
@@ -37,42 +37,17 @@ object Server {
             val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
             val writer = PrintWriter(socket.getOutputStream(), true)
 
-            var request: List<String>? = null
-            do {
-                request = reader.readLine()?.split(" ")
-                if (request != null) {
-                    if (request[0] == "REGISTER") {
-                        val username = request[1]
-                        val password = request[2]
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                val request = line?.split(" ") ?: continue
 
-                        val statement = connection.createStatement()
-                        val updateCount = statement.executeUpdate(
-                            "INSERT INTO Users (username, password) VALUES ('$username', '$password')"
-                        )
-
-                        if (updateCount > 0) {
-                            writer.println("Успешная регистрация")
-                        } else {
-                            writer.println("Ошибка регистрации")
-                        }
-                    } else {
-                        val username = request[0]
-                        val password = request[1]
-
-                        val statement = connection.createStatement()
-                        val resultSet = statement.executeQuery(
-                            "SELECT * FROM Users WHERE username = '$username' AND password = '$password'"
-                        )
-
-                        if (resultSet.next()) {
-                            writer.println("Успешный вход")
-                            sendAccounts(username, writer)
-                        } else {
-                            writer.println("Неверный логин или пароль")
-                        }
-                    }
+                when (request[0]) {
+                    "REGISTER" -> handleRegister(request, writer)
+                    "LOGIN" -> handleLogin(request, writer)
+                    "ACCOUNTS" -> handleGetAccounts(request, writer)
+                    "TRANSFER" -> handleTransfer(request, writer)
                 }
-            } while (request != null)
+            }
         } catch (e: Exception) {
             println("Ошибка при обработке клиента: ${e.message}")
             e.printStackTrace()
@@ -86,37 +61,141 @@ object Server {
     }
 
 
-    private fun sendAccounts(username: String, writer: PrintWriter) {
+    private fun handleRegister(request: List<String>, writer: PrintWriter) {
+        val username = request[1]
+        val password = hashPassword(request[2])
+
+        val statement = connection.prepareStatement(
+            "INSERT INTO Users (username, password) VALUES (?, ?)"
+        )
+        statement.setString(1, username)
+        statement.setString(2, password)
+
+        val updateCount = statement.executeUpdate()
+
+        if (updateCount > 0) {
+            writer.println("Успешная регистрация")
+        } else {
+            writer.println("Ошибка регистрации")
+        }
+    }
+
+    private fun handleLogin(request: List<String>, writer: PrintWriter) {
+        val username = request[1]
+        val password = request[2]
+
+        val statement = connection.prepareStatement(
+            "SELECT password FROM Users WHERE username = ?"
+        )
+        statement.setString(1, username)
+        val resultSet = statement.executeQuery()
+
+        if (resultSet.next()) {
+            val storedPassword = resultSet.getString("password")
+            if (checkPassword(password, storedPassword)) {
+                writer.println("Успешный вход")
+                sendAccounts(username, writer)
+            } else {
+                writer.println("Неверный логин или пароль")
+            }
+        } else {
+            writer.println("Неверный логин или пароль")
+        }
+    }
+
+    private fun handleGetAccounts(request: List<String>, writer: PrintWriter) {
+        val username = request[1]
+        sendAccounts(username, writer)
+    }
+
+    private fun handleTransfer(request: List<String>, writer: PrintWriter) {
+        val fromAccount = request[1]
+        val toAccount = request[2]
+        val amount = BigDecimal(request[3])
+
+        connection.autoCommit = false
+
         try {
-            val statement = connection.createStatement()
-            val resultSet = statement.executeQuery(
-                """
-                SELECT account_number, balance, account_type, maturity_date 
-                FROM Accounts 
-                WHERE user_id = (SELECT id FROM Users WHERE username = '$username')
-                """
+            val withdrawStatement = connection.prepareStatement(
+                "UPDATE Accounts SET balance = balance - ? WHERE account_number = ? AND balance >= ?"
             )
+            withdrawStatement.setBigDecimal(1, amount)
+            withdrawStatement.setString(2, fromAccount)
+            withdrawStatement.setBigDecimal(3, amount)
+            val withdrawUpdateCount = withdrawStatement.executeUpdate()
 
-            while (resultSet.next()) {
-                val accountNumber = resultSet.getString("account_number")
-                val balance = resultSet.getBigDecimal("balance")
-                val accountType = resultSet.getString("account_type")
-                val maturityDate = resultSet.getDate("maturity_date")?.toString()
-
-                writer.println("$accountNumber $balance $accountType $maturityDate")
+            if (withdrawUpdateCount == 0) {
+                writer.println("Недостаточно средств или неверный номер счета")
+                connection.rollback()
+                return
             }
 
-            writer.println("END_OF_DATA")
+            val depositStatement = connection.prepareStatement(
+                "UPDATE Accounts SET balance = balance + ? WHERE account_number = ?"
+            )
+            depositStatement.setBigDecimal(1, amount)
+            depositStatement.setString(2, toAccount)
+            val depositUpdateCount = depositStatement.executeUpdate()
+
+            if (depositUpdateCount == 0) {
+                writer.println("Неверный номер счета получателя")
+                connection.rollback()
+                return
+            }
+
+            val transactionStatement = connection.prepareStatement(
+                "INSERT INTO Transactions (from_account, to_account, amount) VALUES (?, ?, ?)"
+            )
+            transactionStatement.setString(1, fromAccount)
+            transactionStatement.setString(2, toAccount)
+            transactionStatement.setBigDecimal(3, amount)
+            transactionStatement.executeUpdate()
+
+            connection.commit()
+            writer.println("Перевод успешен")
         } catch (e: Exception) {
-            println("Ошибка при отправке данных аккаунта: ${e.message}")
+            connection.rollback()
+            writer.println("Ошибка перевода: ${e.message}")
             e.printStackTrace()
+        } finally {
+            connection.autoCommit = true
         }
+    }
+
+    private fun sendAccounts(username: String, writer: PrintWriter) {
+        val statement = connection.prepareStatement(
+            "SELECT account_number, balance, account_type, maturity_date " +
+                    "FROM Accounts WHERE user_id = (SELECT id FROM Users WHERE username = ?)"
+        )
+        statement.setString(1, username)
+        val resultSet = statement.executeQuery()
+
+        while (resultSet.next()) {
+            val accountNumber = resultSet.getString("account_number")
+            val balance = resultSet.getBigDecimal("balance")
+            val accountType = resultSet.getString("account_type")
+            val maturityDate = resultSet.getDate("maturity_date")?.toString()
+
+            writer.println("$accountNumber $balance $accountType $maturityDate")
+        }
+
+        writer.println("END_OF_DATA")
     }
 
     private fun restartServer() {
         println("Перезапуск сервера через 5 секунд...")
         Thread.sleep(5000)
         start()
+    }
+
+    private fun hashPassword(password: String): String {
+        // Реализуйте хеширование пароля здесь, например, с использованием BCrypt
+        return password // Замените на реальную хеш-функцию
+    }
+
+    private fun checkPassword(password: String, hashedPassword: String): Boolean {
+        // Реализуйте проверку пароля здесь, например, с использованием BCrypt
+        return password == hashedPassword // Замените на реальную проверку хеша
     }
 }
 

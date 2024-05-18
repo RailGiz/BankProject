@@ -1,13 +1,18 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
 
 @Composable
 fun LoginScreen(onLogin: (String, String) -> Unit, onRegister: () -> Unit) {
@@ -94,9 +99,57 @@ fun RegisterScreen(onRegister: (String, String) -> Unit, onBack: () -> Unit) {
 }
 
 @Composable
+fun TransferScreen(onTransfer: (String, String, BigDecimal) -> Unit) {
+    var fromAccount by remember { mutableStateOf("") }
+    var toAccount by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(text = "Перевод денег", style = MaterialTheme.typography.h5)
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = fromAccount,
+            onValueChange = { fromAccount = it },
+            label = { Text("Номер счета отправителя") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(0.8f)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = toAccount,
+            onValueChange = { toAccount = it },
+            label = { Text("Номер счета получателя") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(0.8f)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = amount,
+            onValueChange = { amount = it },
+            label = { Text("Сумма") },
+            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(0.8f)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { onTransfer(fromAccount, toAccount, BigDecimal(amount)) }, modifier = Modifier.fillMaxWidth(0.8f)) {
+            Text("Перевести")
+        }
+    }
+}
+
+@Composable
 fun HomePage(username: String, onLogout: () -> Unit) {
     var accounts by remember { mutableStateOf(listOf<Account>()) }
     var isLoading by remember { mutableStateOf(true) }
+    var showTransfer by remember { mutableStateOf(false) }
+    var transferResult by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(key1 = username) {
         try {
@@ -111,12 +164,13 @@ fun HomePage(username: String, onLogout: () -> Unit) {
         }
     }
 
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
+            .padding(16.dp)
+            .verticalScroll(scrollState),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(text = "Добро пожаловать, $username", style = MaterialTheme.typography.h5)
@@ -150,10 +204,21 @@ fun HomePage(username: String, onLogout: () -> Unit) {
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { showTransfer = true }) {
+            Text("Перевести деньги")
+        }
+        if (showTransfer) {
+            TransferScreen(onTransfer = { fromAccount, toAccount, amount ->
+                transferResult = Client.transferMoney(fromAccount, toAccount, amount)
+            })
+        }
+        transferResult?.let {
+            Text(it, color = MaterialTheme.colors.error, modifier = Modifier.padding(16.dp))
+        }
+        Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = onLogout) {
             Text("Выйти")
         }
-
     }
 }
 
